@@ -10,6 +10,7 @@ resources:
   - networkpolicy.yaml
   - podmonitoring.yaml
   - gateway.yaml
+  - healthcheckpolicy.yaml
 # CI updates newTag on every merge to main; ArgoCD applies it.
 images:
   - name: us-central1-docker.pkg.dev/bj-gke-platform/apps/url-health-api

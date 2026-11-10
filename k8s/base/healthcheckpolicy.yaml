@@ -1,0 +1,22 @@
+# The Google load balancer behind the Gateway health-checks "/" by default, which this
+# API answers with 404. Point the check at /healthz so backends are marked healthy.
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: url-health-api
+  namespace: url-health
+spec:
+  default:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 8080
+        requestPath: /healthz
+  targetRef:
+    group: ""
+    kind: Service
+    name: url-health-api
