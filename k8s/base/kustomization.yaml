@@ -14,4 +14,4 @@ resources:
 # CI updates newTag on every merge to main; ArgoCD applies it.
 images:
   - name: us-central1-docker.pkg.dev/bj-gke-platform/apps/url-health-api
-    newTag: sha-33a4433
+    newTag: sha-28110ca
