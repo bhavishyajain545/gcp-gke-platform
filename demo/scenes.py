@@ -145,7 +145,7 @@ async def main() -> None:
     cluster = wsl(f"gcloud container clusters describe platform --region {REGION} --project {PROJECT} --format='value(privateClusterConfig.enablePrivateNodes,masterAuthorizedNetworksConfig.cidrBlocks[0].cidrBlock,workloadIdentityConfig.workloadPool)'")
     sec_ctx = wsl("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.securityContext}{\"\\n\"}{.spec.template.spec.containers[0].securityContext}'")
     netpol = wsl("kubectl -n url-health get networkpolicy")
-    slo_list = wsl(f"gcloud monitoring slos list --service=url-health-api --project={PROJECT} --format='value(displayName,goal)' 2>&1 | head -3")
+    slo_list = wsl("terraform -chdir=terraform state list | grep monitoring_slo")
     print(f"pre-computed in {time.time() - t0:.0f}s; api={api}")
 
     page = await demo.start()
