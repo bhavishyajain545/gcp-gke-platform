@@ -16,6 +16,7 @@ import (
 	"time"
 )
 
+// demo: version endpoint touched on 2026-11-10 18:31 UTC
 // Version is set at build time with -ldflags "-X main.Version=...".
 var Version = "dev"
 
