@@ -65,6 +65,8 @@ curl -s -X POST http://$IP/checks -H 'content-type: application/json' -d '{"url"
 curl -s http://$IP/checks | jq
 ```
 
+The first `terraform apply` reports two errors for the SLOs ("Cannot find metric"): request-based SLOs can only be created once the Prometheus series exist in Cloud Monitoring, which happens a few minutes after the app has served traffic. Run `terraform apply` again after the API has handled some requests; everything else is created on the first pass.
+
 CI needs two GitHub secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER` (Terraform output `workload_identity_provider`) and nothing else; the service account is named in the workflow. A push to `service/**` on `main` runs tests, builds `sha-<short>`, pushes it and commits the tag bump; ArgoCD applies it within its 3-minute poll (or instantly with a webhook).
 
 ## Security

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GKE GitOps Platform</title>
+<meta name="description" content="GKE Autopilot platform: Go microservice, Terraform, GitHub Actions CI with Workload Identity Federation, ArgoCD GitOps, Workload Identity, Managed Prometheus SLOs and burn-rate alerts.">
+<style>
+  :root{
+    --bg:#f7f8fa; --panel:#ffffff; --ink:#1b2430; --muted:#5b6775; --line:#dfe4ea;
+    --blue:#1a73e8; --blue-soft:#e8f0fe; --purple:#7b3fe4; --purple-soft:#f1ebfd;
+    --green:#188038; --green-soft:#e6f4ea; --amber:#b06000; --amber-soft:#fef3e0; --red:#c5221f;
+    --code:#0f1419; --code-ink:#e6edf3; --radius:14px;
+  }
+  :root:not([data-theme="light"]) { color-scheme: light dark; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg:#0f1317; --panel:#171c22; --ink:#e7ecf2; --muted:#9aa7b4; --line:#2a323c;
+    --blue:#8ab4f8; --blue-soft:#15233a; --purple:#c58af9; --purple-soft:#261a3d;
+    --green:#81c995; --green-soft:#12301b; --amber:#fdd663; --amber-soft:#3a2d0b; --red:#f28b82;
+    --code:#0b0f14; --code-ink:#d7dde5;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f1317; --panel:#171c22; --ink:#e7ecf2; --muted:#9aa7b4; --line:#2a323c;
+    --blue:#8ab4f8; --blue-soft:#15233a; --purple:#c58af9; --purple-soft:#261a3d;
+    --green:#81c995; --green-soft:#12301b; --amber:#fdd663; --amber-soft:#3a2d0b; --red:#f28b82;
+    --code:#0b0f14; --code-ink:#d7dde5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Inter,"Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
+  a{color:var(--blue)}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+  header{padding:56px 0 28px}
+  .eyebrow{color:var(--muted);font-size:14px;letter-spacing:.04em;text-transform:uppercase;margin:0 0 8px}
+  h1{font-size:clamp(28px,4.5vw,44px);line-height:1.15;margin:0 0 14px}
+  .lede{font-size:18px;color:var(--muted);max-width:760px;margin:0 0 20px}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+  .pill{font-size:13px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+  .cta{display:inline-flex;gap:10px;flex-wrap:wrap}
+  .btn{display:inline-block;padding:10px 16px;border-radius:10px;background:var(--blue);color:#fff;text-decoration:none;font-weight:600}
+  .btn.ghost{background:transparent;color:var(--blue);border:1px solid var(--blue)}
+  nav.toc{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);z-index:5}
+  nav.toc .wrap{display:flex;gap:18px;overflow-x:auto;padding:10px 16px;font-size:14px;white-space:nowrap}
+  nav.toc a{text-decoration:none;color:var(--muted)} nav.toc a:hover{color:var(--ink)}
+  section{padding:40px 0;border-top:1px solid var(--line)}
+  h2{font-size:26px;margin:0 0 6px} .sub{color:var(--muted);margin:0 0 22px}
+  h3{font-size:18px;margin:26px 0 8px}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card b{display:block;margin-bottom:6px}
+  .card p{margin:0;color:var(--muted);font-size:15px}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;overflow:auto}
+  figure img{display:block;width:100%;height:auto;border-radius:8px}
+  figcaption{font-size:14px;color:var(--muted);padding:8px 4px 0}
+  pre{background:var(--code);color:var(--code-ink);padding:14px 16px;border-radius:10px;overflow:auto;font:13.5px/1.55 Consolas,"Cascadia Mono",ui-monospace,monospace}
+  code{font-family:Consolas,"Cascadia Mono",ui-monospace,monospace;font-size:.93em;background:var(--blue-soft);padding:1px 5px;border-radius:5px}
+  pre code{background:none;padding:0}
+  .tbl{overflow-x:auto;border-radius:var(--radius)}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:15px}
+  th{background:var(--blue-soft);font-weight:600}
+  tr:last-child td{border-bottom:0}
+  .steps{counter-reset:s;list-style:none;padding:0;margin:0;display:grid;gap:12px}
+  .steps li{position:relative;padding:14px 16px 14px 58px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+  .steps li::before{counter-increment:s;content:counter(s);position:absolute;left:16px;top:14px;width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+  .steps li b{display:block;margin-bottom:4px}
+  .check{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+  .check li{padding-left:28px;position:relative}
+  .check li::before{content:"✓";position:absolute;left:0;top:0;color:var(--green);font-weight:700}
+  .tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:6px;margin-right:6px;font-weight:600}
+  .t-run{background:var(--blue-soft);color:var(--blue)} .t-ai{background:var(--purple-soft);color:var(--purple)} .t-data{background:var(--green-soft);color:var(--green)} .t-ops{background:var(--amber-soft);color:var(--amber)}
+  .video{aspect-ratio:16/9;width:100%;border-radius:var(--radius);background:#000;border:1px solid var(--line)}
+  footer{padding:40px 0;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}
+  svg text{font-family:Inter,"Segoe UI",system-ui,sans-serif}
+  .flow{width:100%;height:auto}
+  @media (max-width:640px){ th,td{font-size:14px} header{padding-top:36px} }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <p class="eyebrow">Google Cloud portfolio · Project 2 of 3</p>
+  <h1>GKE Autopilot platform with GitOps CI/CD, keyless identity and SLOs</h1>
+  <p class="lede">A Go microservice on a private GKE Autopilot cluster. Terraform builds the platform; GitHub Actions builds images with a federated identity; ArgoCD pulls manifests from git; Managed Prometheus feeds two SLOs and a burn-rate alert. From laptop to pod, nothing holds a key.</p>
+  <div class="pills">
+    <span class="pill">GKE Autopilot 1.36</span><span class="pill">Go 1.27</span><span class="pill">Terraform</span><span class="pill">GitHub Actions + WIF</span><span class="pill">ArgoCD</span>
+    <span class="pill">Workload Identity</span><span class="pill">Gateway API</span><span class="pill">Managed Prometheus</span><span class="pill">Cloud Monitoring SLOs</span><span class="pill">Firestore</span>
+  </div>
+  <div class="cta">
+    <a class="btn" href="#demo">Watch the demo</a>
+    <a class="btn ghost" href="https://github.com/bhavishyajain545/gcp-gke-platform">Source on GitHub</a>
+  </div>
+</header>
+
+<nav class="toc"><div class="wrap">
+  <a href="#demo">Demo</a><a href="#architecture">Architecture</a><a href="#gitops">GitOps flow</a><a href="#identity">Identity</a><a href="#service">Service</a><a href="#slo">SLOs</a><a href="#security">Security</a><a href="#deploy">Deploy it</a><a href="#lessons">Lessons</a>
+</div></nav>
+
+<section id="demo"><div class="wrap">
+  <h2>Demo</h2>
+  <p class="sub">Narrated walkthrough: API through the load balancer → identity chain → a real git push → GitHub Actions → ArgoCD sync → rollout → SLOs → security checklist.</p>
+  <video class="video" controls preload="metadata" poster="architecture.png">
+    <source src="https://github.com/bhavishyajain545/gcp-gke-platform/raw/main/demo/demo.mp4" type="video/mp4">
+    <track kind="captions" src="https://github.com/bhavishyajain545/gcp-gke-platform/raw/main/demo/captions.srt" srclang="en" label="English">
+    Your browser does not support the video tag. <a href="https://github.com/bhavishyajain545/gcp-gke-platform/raw/main/demo/demo.mp4">Download demo.mp4</a>.
+  </video>
+  <p class="sub" style="margin-top:10px">Transcript: <a href="https://github.com/bhavishyajain545/gcp-gke-platform/blob/main/demo/transcript.md">demo/transcript.md</a> · Captions: <a href="https://github.com/bhavishyajain545/gcp-gke-platform/blob/main/demo/captions.srt">demo/captions.srt</a>. The push in the video is a real commit; the pipeline it triggers is the one in this repository.</p>
+</div></section>
+
+<section id="architecture"><div class="wrap">
+  <h2>Architecture</h2>
+  <p class="sub">Three planes: delivery (GitHub → Actions → Artifact Registry → ArgoCD), runtime (Autopilot, Gateway, Firestore) and observability (Managed Prometheus → Cloud Monitoring).</p>
+  <figure>
+    <img src="architecture.png" alt="Architecture diagram: GitHub Actions with Workload Identity Federation pushes to Artifact Registry and bumps the kustomize tag; ArgoCD in GKE Autopilot syncs k8s/base; the Go deployment uses Workload Identity to reach Firestore; Managed Prometheus feeds Cloud Monitoring SLOs">
+    <figcaption>Everything inside the outer dashed box is Terraform (28 resources). The inner box is the cluster: ArgoCD and the application namespace with its NetworkPolicy, HPA, Gateway and PodMonitoring.</figcaption>
+  </figure>
+  <div class="grid" style="margin-top:16px">
+    <div class="card"><span class="tag t-run">Runtime</span><b>GKE Autopilot "platform"</b><p>Regional, REGULAR channel, private nodes behind Cloud NAT, control plane reachable from one authorized CIDR, Workload Identity and Gateway API enabled. Billed per pod request.</p></div>
+    <div class="card"><span class="tag t-ops">Delivery</span><b>GitHub Actions → ArgoCD</b><p>CI tests, builds and pushes <code>sha-&lt;commit&gt;</code>, then commits the tag into <code>k8s/base/kustomization.yaml</code>. ArgoCD applies it with automated sync, prune and self-heal.</p></div>
+    <div class="card"><span class="tag t-data">Data</span><b>Firestore via Workload Identity</b><p>The pod's Kubernetes service account maps to a Google service account that only has <code>roles/datastore.user</code>. No key, no secret, no sidecar.</p></div>
+    <div class="card"><span class="tag t-ai">Observability</span><b>Managed Prometheus + SLOs</b><p><code>PodMonitoring</code> scrapes <code>/metrics</code>; a custom Cloud Monitoring service carries a latency SLO, an availability SLO, a multi-window burn-rate alert and a PromQL dashboard.</p></div>
+  </div>
+</div></section>
+
+<section id="gitops"><div class="wrap">
+  <h2>GitOps flow</h2>
+  <p class="sub">A push to <code>service/</code> on <code>main</code> ends as a rolled-out deployment without anyone running kubectl.</p>
+  <figure>
+    <svg class="flow" viewBox="0 0 1040 330" role="img" aria-label="Sequence: developer pushes, GitHub Actions tests, exchanges OIDC token for GCP token, builds and pushes image, commits tag bump; ArgoCD detects commit and syncs; GKE rolls out">
+      <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5b6775"/></marker></defs>
+      <g font-size="13" font-weight="600" fill="currentColor" text-anchor="middle">
+        <text x="80" y="24">Developer</text><text x="300" y="24">GitHub Actions</text><text x="540" y="24">GCP (STS · AR)</text><text x="760" y="24">ArgoCD</text><text x="960" y="24">GKE</text>
+      </g>
+      <g stroke="#9aa7b4" stroke-dasharray="4 4"><line x1="80" y1="34" x2="80" y2="320"/><line x1="300" y1="34" x2="300" y2="320"/><line x1="540" y1="34" x2="540" y2="320"/><line x1="760" y1="34" x2="760" y2="320"/><line x1="960" y1="34" x2="960" y2="320"/></g>
+      <g stroke="#5b6775" stroke-width="1.6" fill="none" marker-end="url(#ar)">
+        <line x1="80" y1="60" x2="298" y2="60"/>
+        <line x1="300" y1="95" x2="538" y2="95"/>
+        <line x1="540" y1="120" x2="302" y2="120"/>
+        <line x1="300" y1="150" x2="538" y2="150"/>
+        <line x1="300" y1="185" x2="758" y2="185" stroke-dasharray="6 3"/>
+        <line x1="760" y1="220" x2="958" y2="220"/>
+        <line x1="960" y1="255" x2="542" y2="255"/>
+        <line x1="960" y1="295" x2="762" y2="295"/>
+      </g>
+      <g font-size="12" fill="currentColor">
+        <text x="190" y="54" text-anchor="middle">git push main (service/**)</text>
+        <text x="420" y="89" text-anchor="middle">go test → OIDC token → STS exchange (WIF)</text>
+        <text x="420" y="114" text-anchor="middle">short-lived token for sa-github-ci</text>
+        <text x="420" y="144" text-anchor="middle">docker push apps/url-health-api:sha-abc1234</text>
+        <text x="530" y="179" text-anchor="middle">commit "deploy: sha-abc1234 [skip ci]" → k8s/base/kustomization.yaml (ArgoCD polls main)</text>
+        <text x="860" y="214" text-anchor="middle">sync: apply kustomize build</text>
+        <text x="750" y="249" text-anchor="middle">rolling update pulls the new image (node SA: AR reader)</text>
+        <text x="860" y="289" text-anchor="middle">Healthy · Synced</text>
+      </g>
+    </svg>
+    <figcaption>The tag-bump commit carries <code>[skip ci]</code> and touches only <code>k8s/</code>, which is outside the workflow's path filter, so CI cannot loop. Rollback is <code>git revert</code> of the bump.</figcaption>
+  </figure>
+</div></section>
+
+<section id="identity"><div class="wrap">
+  <h2>Identity chain (no keys anywhere)</h2>
+  <p class="sub">Two federations: GitHub → GCP for CI, Kubernetes → GCP for the pod.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Principal</th><th>Becomes</th><th>Allowed to</th><th>Bound by</th></tr></thead>
+    <tbody>
+      <tr><td>GitHub Actions job (OIDC token, <code>repository=bhavishyajain545/gcp-gke-platform</code>)</td><td><code>sa-github-ci@…</code></td><td><code>roles/artifactregistry.writer</code></td><td>WIF pool <code>github</code>, provider <code>github-oidc</code>, attribute condition on the repository, <code>roles/iam.workloadIdentityUser</code> for <code>principalSet://…/attribute.repository/…</code></td></tr>
+      <tr><td>Pod with KSA <code>url-health/url-health-api</code></td><td><code>url-health-api@…</code></td><td><code>roles/datastore.user</code></td><td>KSA annotation <code>iam.gke.io/gcp-service-account</code> + <code>roles/iam.workloadIdentityUser</code> for <code>serviceAccount:PROJECT.svc.id.goog[url-health/url-health-api]</code></td></tr>
+      <tr><td>Autopilot nodes (Compute default SA)</td><td>itself</td><td><code>roles/artifactregistry.reader</code> on the <code>apps</code> repository only</td><td>Repository-level IAM; the org policy disables automatic grants for default SAs, so this is the only role it has.</td></tr>
+      <tr><td>Bootstrap build (<code>gcloud builds submit</code>)</td><td><code>sa-build@…</code></td><td>AR writer, log writer, source bucket reader</td><td>Explicit <code>serviceAccount:</code> in <code>cloudbuild.yaml</code>, <code>CLOUD_LOGGING_ONLY</code></td></tr>
+    </tbody>
+  </table></div>
+</div></section>
+
+<section id="service"><div class="wrap">
+  <h2>The service</h2>
+  <p class="sub"><code>url-health-api</code>: small enough to read in ten minutes, instrumented enough to run an SLO on.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Endpoint</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /checks</code></td><td>Registers an absolute http(s) URL; 400 on anything else; 201 with the stored check.</td></tr>
+      <tr><td><code>GET /checks</code></td><td>All checks with status (<code>pending|up|down</code>), HTTP status, latency and last probe time, oldest first.</td></tr>
+      <tr><td><code>GET /readyz</code></td><td>503 until the checker's first sweep completes and whenever it has not swept in 3 intervals; this takes a wedged worker out of rotation.</td></tr>
+      <tr><td><code>GET /metrics</code></td><td><code>http_request_duration_seconds</code>, <code>http_requests_total</code> (route/method/code), <code>url_check_up</code>, <code>url_check_latency_seconds</code>, <code>url_checks_total</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Runtime shape</h3>
+  <ul class="check">
+    <li><b>Checker goroutine</b>: concurrent probes every 60 s with a 5 s timeout; no redirects followed; results persisted per check.</li>
+    <li><b>Store interface</b>: <code>MemoryStore</code> for tests and local runs, <code>FirestoreStore</code> on GKE; the handlers never know which.</li>
+    <li><b>Graceful shutdown</b>: SIGTERM stops the ticker and drains the HTTP server within the pod's 20 s grace period.</li>
+    <li><b>Image</b>: multi-stage build, static binary, <code>distroless/static:nonroot</code>, 8 MB.</li>
+  </ul>
+</div></section>
+
+<section id="slo"><div class="wrap">
+  <h2>SLOs and alerting</h2>
+  <p class="sub">Defined in Terraform on Managed Prometheus metrics, with the SRE-workbook burn-rate thresholds.</p>
+  <div class="grid">
+    <div class="card"><b>Latency SLO</b><p>99% of <code>/checks</code> requests under 300 ms over a rolling 28 days. SLI: distribution cut on <code>prometheus.googleapis.com/http_request_duration_seconds/histogram</code>, route=<code>/checks</code>.</p></div>
+    <div class="card"><b>Availability SLO</b><p>99.5% of <code>/checks</code> requests not 5xx over 28 days. SLI: good/total on <code>http_requests_total</code> with <code>code!~"5.."</code>.</p></div>
+    <div class="card"><b>Burn-rate alert</b><p>Fires when the 1 h burn rate exceeds 14.4× or the 6 h rate exceeds 6×: that is 2% of the monthly budget gone in an hour, or 5% in six. Email notification channel; the policy text links the runbook steps (HPA throttling, Firestore latency, recent deploys).</p></div>
+    <div class="card"><b>Dashboard</b><p>PromQL widgets: p99 latency, requests/s by status code, URL up/down, probe latency p95 per URL.</p></div>
+  </div>
+  <figure style="margin-top:16px">
+    <svg class="flow" viewBox="0 0 1040 150" role="img" aria-label="Pipeline: pod /metrics → PodMonitoring → Managed Prometheus → Cloud Monitoring metrics → custom service SLOs → burn-rate alert → email">
+      <defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5b6775"/></marker></defs>
+      <g fill="var(--panel)" stroke="var(--line)" stroke-width="1.5">
+        <rect x="10" y="30" width="150" height="80" rx="12"/><rect x="190" y="30" width="150" height="80" rx="12"/><rect x="370" y="30" width="150" height="80" rx="12"/><rect x="550" y="30" width="150" height="80" rx="12"/><rect x="730" y="30" width="150" height="80" rx="12"/><rect x="910" y="30" width="120" height="80" rx="12"/>
+      </g>
+      <g stroke="#5b6775" stroke-width="1.6" marker-end="url(#ar2)"><line x1="160" y1="70" x2="188" y2="70"/><line x1="340" y1="70" x2="368" y2="70"/><line x1="520" y1="70" x2="548" y2="70"/><line x1="700" y1="70" x2="728" y2="70"/><line x1="880" y1="70" x2="908" y2="70"/></g>
+      <g font-size="13" fill="currentColor" text-anchor="middle">
+        <text x="85" y="62" font-weight="600">Pod</text><text x="85" y="82">/metrics (client_golang)</text>
+        <text x="265" y="62" font-weight="600">PodMonitoring</text><text x="265" y="82">selector app=url-health-api</text><text x="265" y="98" font-size="11">30 s interval</text>
+        <text x="445" y="62" font-weight="600">Managed Prometheus</text><text x="445" y="82">collector in gmp-system</text>
+        <text x="625" y="62" font-weight="600">Cloud Monitoring</text><text x="625" y="82">prometheus.googleapis.com/*</text>
+        <text x="805" y="62" font-weight="600">Custom service</text><text x="805" y="82">2 SLOs · error budgets</text>
+        <text x="970" y="62" font-weight="600">Alert</text><text x="970" y="82">burn rate → email</text>
+      </g>
+    </svg>
+  </figure>
+</div></section>
+
+<section id="security"><div class="wrap">
+  <h2>Security checklist</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Control</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Private nodes, Cloud NAT egress, control plane limited to one CIDR, no public node IPs</td><td><code>terraform/gke.tf</code>, <code>vpc.tf</code></td></tr>
+      <tr><td>Workload Identity for the app, Workload Identity Federation for CI, dedicated bootstrap build SA, zero service-account keys</td><td><code>terraform/iam.tf</code>, <code>.github/workflows/ci.yml</code>, <code>cloudbuild.yaml</code></td></tr>
+      <tr><td>Pod: <code>runAsNonRoot</code>, uid 65532, <code>readOnlyRootFilesystem</code>, <code>allowPrivilegeEscalation: false</code>, <code>capabilities: drop [ALL]</code>, seccomp RuntimeDefault, CPU/memory limits</td><td><code>k8s/base/deployment.yaml</code></td></tr>
+      <tr><td>NetworkPolicy default-deny; ingress only from Google front ends (130.211.0.0/22, 35.191.0.0/16) and <code>gmp-system</code>; egress only DNS and public 80/443</td><td><code>k8s/base/networkpolicy.yaml</code></td></tr>
+      <tr><td>Distroless static image, pinned modules, registry retention of 10 versions</td><td><code>service/Dockerfile</code>, <code>terraform/registry.tf</code></td></tr>
+      <tr><td>Load balancer health check pinned to <code>/healthz</code></td><td><code>k8s/base/healthcheckpolicy.yaml</code></td></tr>
+    </tbody>
+  </table></div>
+</div></section>
+
+<section id="deploy"><div class="wrap">
+  <h2>Deploy it yourself</h2>
+  <p class="sub">About 15 minutes; the cluster takes most of it.</p>
+  <ol class="steps">
+    <li><b>Configure</b><code>cp terraform/terraform.tfvars.example terraform/terraform.tfvars</code>: project id, your public IP as <code>authorized_cidr</code>, alert email, GitHub repo.</li>
+    <li><b>Bring up</b><code>./deploy.sh</code> runs Terraform, builds the first image with Cloud Build, installs ArgoCD with Helm and applies the Application. Use <code>./deploy.sh --direct</code> to skip ArgoCD and <code>kubectl apply -k k8s/base</code>.</li>
+    <li><b>CI secret</b>Add <code>GCP_WORKLOAD_IDENTITY_PROVIDER</code> (Terraform output <code>workload_identity_provider</code>) as a repository secret. That is the only secret the pipeline needs.</li>
+    <li><b>SLOs</b>Run <code>terraform apply</code> a second time after the API has served traffic: request-based SLOs can only be created once the Prometheus series exist in Cloud Monitoring.</li>
+    <li><b>Try the GitOps loop</b>Change anything under <code>service/</code>, push to <code>main</code>, watch Actions → the tag-bump commit → ArgoCD → <code>kubectl -n url-health rollout status deploy/url-health-api</code> → <code>curl http://&lt;gateway-ip&gt;/version</code>.</li>
+    <li><b>Clean up</b><code>terraform -chdir=terraform destroy</code>.</li>
+  </ol>
+</div></section>
+
+<section id="lessons"><div class="wrap">
+  <h2>What I learned building it</h2>
+  <div class="grid">
+    <div class="card"><b>Default service accounts have nothing in a new org</b><p>Autopilot nodes pull images as the Compute default SA. With <code>iam.automaticIamGrantsForDefaultServiceAccounts</code> enforced it has no roles, so pulls failed with 403 until Terraform granted <code>artifactregistry.reader</code> on the one repository.</p></div>
+    <div class="card"><b>Default-deny must still allow NodeLocal DNS</b><p>Allowing DNS only to the <code>kube-system</code> namespace was not enough: Autopilot resolves through a node-local cache. The first Firestore call hung on DNS and the readiness probe never passed. Egress on port 53 to any destination fixed it.</p></div>
+    <div class="card"><b>The load balancer checks "/" by default</b><p>Gateway backends were "no healthy upstream" because the API returns 404 on <code>/</code>. A <code>HealthCheckPolicy</code> pointing at <code>/healthz</code> made them healthy in two minutes.</p></div>
+    <div class="card"><b>SLOs need existing series</b><p>Cloud Monitoring validates request-based SLIs against metric descriptors. The first <code>terraform apply</code> fails for the SLOs until the app has been scraped and served the route; the second apply succeeds.</p></div>
+    <div class="card"><b>Readiness should mean "able to do the job"</b><p>Tying <code>/readyz</code> to the checker's last sweep caught the DNS problem immediately; a trivial 200 would have hidden it.</p></div>
+    <div class="card"><b>Keep CI from looping</b><p>The tag-bump commit is marked <code>[skip ci]</code> and the workflow only triggers on <code>service/**</code>, so the deployment commit never rebuilds the image.</p></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  Built by Bhavishya Jain · <a href="https://github.com/bhavishyajain545/gcp-gke-platform">github.com/bhavishyajain545/gcp-gke-platform</a> · Part of a three-project Google Cloud portfolio (Gemini RAG agent, Data + AI pipeline).
+</div></footer>
+</body>
+</html>

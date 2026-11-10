@@ -26,7 +26,10 @@ spec:
         - ipBlock: { cidr: 35.191.0.0/16 }
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: gmp-system   # Managed Prometheus collector
+              kubernetes.io/metadata.name: gmp-system       # Managed Prometheus collector (Standard clusters)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gke-gmp-system   # Managed Prometheus collector (Autopilot, Google-managed)
       ports:
         - port: 8080
           protocol: TCP
