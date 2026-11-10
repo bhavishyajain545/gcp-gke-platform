@@ -31,11 +31,9 @@ spec:
         - port: 8080
           protocol: TCP
   egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
+    # DNS: Autopilot resolves through NodeLocal DNSCache (169.254.20.10), not only kube-dns,
+    # so allow port 53 to any destination rather than just the kube-system namespace.
+    - ports:
         - port: 53
           protocol: UDP
         - port: 53
