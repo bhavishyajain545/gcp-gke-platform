@@ -1,0 +1,29 @@
+# Bootstrap build (first image, before the GitHub Actions pipeline exists):
+#   gcloud builds submit --config cloudbuild.yaml --substitutions=_TAG=v1 .
+substitutions:
+  _REGION: us-central1
+  _REPO: apps
+  _IMAGE: url-health-api
+  _TAG: v1
+
+steps:
+  - name: golang:1.27
+    dir: service
+    entrypoint: bash
+    args: ["-c", "go vet ./... && go test -count=1 ./..."]
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - VERSION=${_TAG}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${_TAG}
+      - service
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_IMAGE}:${_TAG}
+
+serviceAccount: projects/${PROJECT_ID}/serviceAccounts/sa-build@${PROJECT_ID}.iam.gserviceaccount.com
+options:
+  logging: CLOUD_LOGGING_ONLY

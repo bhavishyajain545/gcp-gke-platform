@@ -1,0 +1,25 @@
+# GKE Gateway API: a global external Application Load Balancer managed by GKE.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: external
+  namespace: url-health
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: url-health-api
+  namespace: url-health
+spec:
+  parentRefs:
+    - name: external
+  rules:
+    - backendRefs:
+        - name: url-health-api
+          port: 80

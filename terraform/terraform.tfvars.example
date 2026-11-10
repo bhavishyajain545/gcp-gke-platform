@@ -1,0 +1,5 @@
+project_id      = "bj-gke-platform"
+region          = "us-central1"
+authorized_cidr = "203.0.113.10/32" # your public IP: curl -s https://api.ipify.org
+github_repo     = "bhavishyajain545/gcp-gke-platform"
+alert_email     = "you@example.com"

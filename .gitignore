@@ -1,0 +1,24 @@
+# secrets / keys
+*.json
+!package*.json
+*.pem
+.env
+*.tfvars
+!*.tfvars.example
+
+# terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# go
+service/url-health-api
+service/*.test
+
+# demo recording scratch (keep demo.mp4, captions.srt, transcript.md)
+demo/_chrome-profile/
+demo/_video/
+demo/tts/
+demo/scenes.json
+demo/__pycache__/

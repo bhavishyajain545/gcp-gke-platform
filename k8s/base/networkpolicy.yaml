@@ -1,0 +1,51 @@
+# Default deny, then explicit allows. Ingress only from the Google front-end
+# proxies (Gateway / health checks) and the Managed Prometheus collector;
+# egress only DNS plus HTTPS/HTTP to the internet (URL probes, Firestore).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: url-health
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: url-health-api
+  namespace: url-health
+spec:
+  podSelector:
+    matchLabels:
+      app: url-health-api
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 130.211.0.0/22 }   # Google load balancer / health checks
+        - ipBlock: { cidr: 35.191.0.0/16 }
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gmp-system   # Managed Prometheus collector
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 80
+          protocol: TCP

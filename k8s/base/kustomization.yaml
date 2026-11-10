@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: url-health
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - networkpolicy.yaml
+  - podmonitoring.yaml
+  - gateway.yaml
+# CI updates newTag on every merge to main; ArgoCD applies it.
+images:
+  - name: us-central1-docker.pkg.dev/bj-gke-platform/apps/url-health-api
+    newTag: v1

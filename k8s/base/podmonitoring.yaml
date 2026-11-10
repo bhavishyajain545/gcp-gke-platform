@@ -1,0 +1,15 @@
+# Google Managed Prometheus scrapes /metrics; series appear in Cloud Monitoring
+# as prometheus.googleapis.com/<metric>/<kind> and in PromQL.
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: url-health-api
+  namespace: url-health
+spec:
+  selector:
+    matchLabels:
+      app: url-health-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

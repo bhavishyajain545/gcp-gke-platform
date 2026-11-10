@@ -1,0 +1,24 @@
+# ArgoCD watches k8s/base on main and keeps the cluster in sync (pull-based CD).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: url-health-api
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/bhavishyajain545/gcp-gke-platform.git
+    targetRevision: main
+    path: k8s/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: url-health
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

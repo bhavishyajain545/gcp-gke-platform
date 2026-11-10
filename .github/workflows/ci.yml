@@ -1,0 +1,64 @@
+# CI: test -> build -> push to Artifact Registry -> bump the image tag in k8s/base.
+# Auth to GCP is keyless: GitHub's OIDC token is exchanged through Workload
+# Identity Federation for a short-lived token of sa-ci (terraform/iam.tf).
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["service/**", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["service/**"]
+
+permissions:
+  contents: write   # commit the new tag to k8s/base
+  id-token: write   # OIDC token for Workload Identity Federation
+
+env:
+  REGION: us-central1
+  PROJECT_ID: bj-gke-platform
+  IMAGE: us-central1-docker.pkg.dev/bj-gke-platform/apps/url-health-api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: service/go.mod
+      - run: go vet ./... && go test -count=1 -race ./...
+        working-directory: service
+
+  build-push:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: sa-github-ci@bj-gke-platform.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build and push
+        run: |
+          TAG="sha-${GITHUB_SHA::7}"
+          docker build --build-arg VERSION="$TAG" -t "$IMAGE:$TAG" -t "$IMAGE:latest" service
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Bump image tag in k8s/base (GitOps)
+        run: |
+          sed -i "s|^\(\s*newTag:\s*\).*|\1${TAG}|" k8s/base/kustomization.yaml
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add k8s/base/kustomization.yaml
+          git commit -m "deploy: url-health-api ${TAG} [skip ci]"
+          git push

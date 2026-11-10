@@ -1,0 +1,81 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Architecture: GKE GitOps Platform</title>
+<style>
+  body{margin:0;background:#ffffff;font-family:Inter,Segoe UI,Arial,sans-serif;color:#1f2933}
+  .canvas{width:1400px;height:800px;position:relative;padding:36px;box-sizing:border-box}
+  h1{font-size:26px;margin:0 0 4px}
+  .sub{color:#5f6b7a;font-size:15px;margin-bottom:24px}
+  .box{position:absolute;border-radius:12px;padding:12px 14px;box-sizing:border-box;border:2px solid;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+  .box b{display:block;font-size:15px;margin-bottom:3px}
+  .box span{font-size:12.5px;color:#5f6b7a;line-height:1.35}
+  .git{border-color:#5f6b7a}
+  .ci{border-color:#f4b400;background:#fff8e1}
+  .k8s{border-color:#4285f4;background:#eef4ff}
+  .data{border-color:#0f9d58;background:#ebf8f0}
+  .obs{border-color:#9334e6;background:#f6efff}
+  .zone{position:absolute;border:2px dashed #c3cbd5;border-radius:16px}
+  .zone label{position:absolute;top:-12px;left:16px;background:#fff;padding:0 8px;font-size:13px;color:#5f6b7a;font-weight:600}
+  svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .lbl{font-size:12px;fill:#5f6b7a}
+</style></head>
+<body><div class="canvas">
+  <h1>GKE Autopilot platform: GitOps CI/CD, Workload Identity, SLOs</h1>
+  <div class="sub">Project bj-gke-platform · Terraform-provisioned · keyless from laptop to pod</div>
+
+  <div class="zone" style="left:330px;top:120px;width:1030px;height:640px"><label>Google Cloud project: bj-gke-platform (us-central1)</label></div>
+  <div class="zone" style="left:570px;top:170px;width:560px;height:470px;border-color:#9bb8f3"><label style="color:#4285f4">GKE Autopilot "platform" · private nodes · Workload Identity</label></div>
+
+  <!-- left column -->
+  <div class="box git" style="left:40px;top:160px;width:250px"><b>GitHub: gcp-gke-platform</b><span>service/ (Go) · k8s/base (kustomize)<br>terraform/ · .github/workflows/ci.yml</span></div>
+  <div class="box ci" style="left:40px;top:310px;width:250px"><b>GitHub Actions (CI)</b><span>go test → docker build → push<br>→ bump newTag in k8s/base → commit<br>auth: OIDC → Workload Identity<br>Federation (no stored key)</span></div>
+  <div class="box git" style="left:40px;top:480px;width:250px"><b>Engineer</b><span>git push · kubectl from the one<br>authorized IP · curl the API</span></div>
+
+  <!-- column 2 -->
+  <div class="box ci" style="left:360px;top:175px;width:180px"><b>Cloud Build</b><span>bootstrap image as sa-build<br>(before CI exists)</span></div>
+  <div class="box ci" style="left:360px;top:300px;width:180px"><b>Artifact Registry</b><span>apps/url-health-api:sha-…<br>keep last 10 versions</span></div>
+  <div class="box ci" style="left:360px;top:425px;width:180px"><b>WIF pool "github"</b><span>OIDC provider; condition<br>repository == owner/repo<br>→ sa-github-ci (AR writer)</span></div>
+  <div class="box data" style="left:360px;top:600px;width:180px"><b>Cloud NAT</b><span>egress for private nodes<br>(pulls, URL probes)</span></div>
+
+  <!-- cluster -->
+  <div class="box k8s" style="left:590px;top:205px;width:230px"><b>ArgoCD (ns argocd)</b><span>Application → k8s/base@main<br>automated sync · prune · self-heal</span></div>
+  <div class="box k8s" style="left:870px;top:205px;width:240px"><b>Gateway API</b><span>gke-l7-global-external-managed<br>HTTPRoute → Service :80</span></div>
+  <div class="box k8s" style="left:590px;top:340px;width:520px"><b>ns url-health: Deployment url-health-api (Go)</b><span>2-5 replicas (HPA cpu 60%) · non-root · read-only FS · drop ALL caps · probes /healthz /readyz<br>NetworkPolicy default-deny + allow LB, GMP, DNS, egress 80/443<br>KSA url-health-api ⇄ GSA url-health-api (Workload Identity) · PodMonitoring /metrics</span></div>
+  <div class="box obs" style="left:590px;top:500px;width:230px"><b>Managed Prometheus</b><span>scrapes /metrics every 30s:<br>http_request_duration_seconds<br>http_requests_total · url_check_up</span></div>
+  <div class="box k8s" style="left:870px;top:500px;width:240px"><b>Checker goroutine</b><span>probes every registered URL / 60s<br>writes status + latency</span></div>
+
+  <!-- right column -->
+  <div class="box data" style="left:1150px;top:205px;width:190px"><b>Firestore (native)</b><span>collection checks<br>GSA = roles/datastore.user</span></div>
+  <div class="box obs" style="left:1150px;top:430px;width:190px"><b>Cloud Monitoring</b><span>service url-health-api<br>SLO 99% /checks &lt; 300 ms<br>SLO 99.5% non-5xx<br>burn-rate alert 1h/6h → email<br>PromQL dashboard</span></div>
+
+  <svg>
+    <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5f6b7a"/></marker></defs>
+    <g stroke="#5f6b7a" stroke-width="2" fill="none" marker-end="url(#a)">
+      <path d="M165,232 L165,308"/>
+      <path d="M290,350 L358,350"/>
+      <path d="M290,390 C320,390 330,470 358,470"/>
+      <path d="M450,246 L450,298"/>
+      <path d="M290,185 C330,185 330,140 400,140 L560,140 C580,140 590,170 600,203" stroke-dasharray="5 4"/>
+      <path d="M540,350 L588,380"/>
+      <path d="M705,276 L705,338"/>
+      <path d="M990,276 L990,338"/>
+      <path d="M1110,370 C1130,370 1130,250 1148,250"/>
+      <path d="M705,436 L705,498"/>
+      <path d="M990,436 L990,498"/>
+      <path d="M705,578 C705,620 1120,620 1148,520"/>
+      <path d="M290,540 C330,570 520,575 588,575" stroke-dasharray="5 4"/>
+    </g>
+    <text class="lbl" x="172" y="275">git push</text>
+    <text class="lbl" x="295" y="342">push image</text>
+    <text class="lbl" x="296" y="426">OIDC token</text>
+    <text class="lbl" x="458" y="276">first image</text>
+    <text class="lbl" x="400" y="158">ArgoCD watches k8s/base</text>
+    <text class="lbl" x="548" y="342">pull</text>
+    <text class="lbl" x="712" y="312">sync</text>
+    <text class="lbl" x="997" y="312">route</text>
+    <text class="lbl" x="1118" y="306">r/w</text>
+    <text class="lbl" x="712" y="490">scrape</text>
+    <text class="lbl" x="997" y="490">runs in pod</text>
+    <text class="lbl" x="880" y="612">metrics → SLOs, alerts, dashboard</text>
+    <text class="lbl" x="330" y="548">curl http://&lt;gateway-ip&gt;/checks</text>
+  </svg>
+</div></body></html>
