@@ -86,14 +86,16 @@ Delete the Kubernetes objects first so the Gateway controller removes the load b
 Terraform state); then destroy.
 
 ```bash
-kubectl delete -f k8s/argocd/application.yaml --ignore-not-found      # stop ArgoCD re-creating things
-kubectl delete -k k8s/base --ignore-not-found                          # Gateway → LB, NEGs, forwarding rule go away
-sleep 120
-terraform -chdir=terraform destroy -auto-approve                       # cluster (deletion_protection=false), NAT, VPC, AR, Firestore, WIF, monitoring
-# leftovers check (should all be empty):
-gcloud compute forwarding-rules list --project "$PROJECT_ID"; gcloud compute addresses list --project "$PROJECT_ID"
-gcloud compute network-endpoint-groups list --project "$PROJECT_ID"; gcloud container clusters list --project "$PROJECT_ID"
+./teardown.sh            # 1 kubectl delete Application + k8s/base (Gateway → LB cleanup)  2 terraform destroy
+                         # 3 delete Gateway-controller leftovers by hand (forwarding rules, proxies, URL maps,
+                         #   backend services, health checks, NEGs, addresses, GKE firewall rules)
+                         # 4 terraform destroy again for the VPC  5 report of what is left
+./audit-billing.sh       # every section should be empty
 ```
+
+`teardown.sh` also works when the control plane is unreachable (your IP dropped out of `authorized_cidr`, which happened
+during the real teardown): step 1 is skipped after a timeout and step 3 removes the load balancer resources, which are
+**not** in Terraform state because the Gateway controller created them.
 
 The WIF pool is soft-deleted for 30 days (no cost). Keeping the empty project costs nothing.
 

@@ -93,7 +93,7 @@ CI needs two GitHub secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER` (Terraform output 
 Autopilot bills per pod request (~₹100-150/day for this app + ArgoCD), the global load balancer ~₹50/day. Run it only for the demo:
 
 ```bash
-terraform -chdir=terraform destroy
+./teardown.sh        # k8s objects → terraform destroy → Gateway LB leftovers → report; ./audit-billing.sh lists everything billable
 ```
 
 ## Design notes (interview talking points)
