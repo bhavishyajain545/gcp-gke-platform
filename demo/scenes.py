@@ -41,6 +41,12 @@ def sh(cmd: str) -> str:
     return (r.stdout + r.stderr).strip()
 
 
+def git(*args: str) -> str:
+    """git without a shell: Windows cmd.exe does not understand single quotes, which broke pathspecs."""
+    r = subprocess.run(["git", "-c", "core.autocrlf=false", *args], capture_output=True, text=True, cwd=ROOT)
+    return (r.stdout + r.stderr).strip()
+
+
 def wsl(cmd: str) -> str:
     """Run a command inside WSL where gcloud/kubectl/terraform/helm are set up (Windows host)."""
     if os.name != "nt":
@@ -116,13 +122,15 @@ async def argocd_login_early(tab) -> None:
     """Sign in to the ArgoCD UI in the background tab before recording so the sync scene is instant."""
     pw = wsl("kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d")
     try:
-        await tab.fill("input[name=username]", "admin", timeout=20000)
+        await tab.wait_for_selector("input[name=password]", timeout=90000)  # the UI bundle is slow over a port-forward
+        await tab.fill("input[name=username]", "admin")
         await tab.fill("input[name=password]", pw)
-        await tab.click("button[type=submit]")
-        await tab.wait_for_url(re.compile(r"/applications"), timeout=30000)
+        await tab.click("button[type=submit]:has-text('SIGN IN')")
+        await tab.wait_for_url(re.compile(r"/applications"), timeout=60000)
         await tab.goto(f"{ARGOCD_UI}/applications/argocd/url-health-api?view=tree", wait_until="domcontentloaded")
+        print("  argocd: signed in")
     except Exception as exc:
-        print(f"  ! argocd early login: {type(exc).__name__}")
+        print(f"  ! argocd early login: {type(exc).__name__}: {str(exc)[:120]}")
 
 
 async def main() -> None:
@@ -153,7 +161,7 @@ async def main() -> None:
     if use_cdp:
         gh_tab = await demo.new_tab(f"https://github.com/{REPO}/actions")
         argo_tab = await demo.new_tab(f"{ARGOCD_UI}/login")
-        slo_tab = await demo.new_tab(f"https://console.cloud.google.com/monitoring/services/url-health-api?project={PROJECT}")
+        slo_tab = await demo.new_tab(f"https://console.cloud.google.com/monitoring/services/895191614437/url-health-api?project={PROJECT}")
         await demo.capture(page)
         await argocd_login_early(argo_tab)
 
@@ -206,6 +214,10 @@ async def main() -> None:
     push_sha = {"sha": ""}
 
     async def s4():
+        tok = os.environ.get("GH_TOKEN", "")
+        auth = f"https://x-access-token:{tok}@github.com/{REPO}.git"
+        # 1) up to date with origin (CI's tag-bump commits) - autostash parks any local edits, 2) then make the change.
+        print("  pull:", git("pull", "-q", "--rebase", "--autostash", auth, "main").replace(tok, "***")[:160])
         main_go = ROOT / "service" / "main.go"
         src = main_go.read_text(encoding="utf-8")
         stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
@@ -213,16 +225,18 @@ async def main() -> None:
         new_line = f"{marker} version endpoint touched on {stamp}"
         src = re.sub(r"// demo:.*\n", "", src)
         src = src.replace("// Version is set at build time", f"{new_line}\n// Version is set at build time", 1)
-        main_go.write_text(src, encoding="utf-8")
-        tok = os.environ.get("GH_TOKEN", "")
-        sh("git add service/main.go")
-        sh(f'git -c user.name="Bhavishya Jain" -c user.email="jainbhavishya545@gmail.com" commit -q -m "service: touch version endpoint for the GitOps demo"')
-        out = sh(f"git push -q https://x-access-token:{tok}@github.com/{REPO}.git main")
-        push_sha["sha"] = sh("git rev-parse --short HEAD")
+        main_go.write_text(src, encoding="utf-8", newline="\n")  # keep LF: a CRLF rewrite would show as a 100-line diff
+        git("add", "service/main.go")
+        git("-c", "user.name=Bhavishya Jain", "-c", "user.email=jainbhavishya545@gmail.com", "commit", "-q", "-m", "service: touch version endpoint for the GitOps demo")
+        out = git("push", auth, "main")
+        push_sha["sha"] = git("rev-parse", "--short", "HEAD")
+        push_sha["full"] = git("rev-parse", "HEAD")
+        print("  push:", out.replace(tok, "***")[:160])
+        clean = "\n".join(l for l in out.replace(tok, "***").splitlines() if "LF will be" not in l and l.strip())
         await demo.terminal("GitOps: push a change", [
-            ("git diff --stat HEAD~1", sh("git diff --stat HEAD~1")),
-            ("git log --oneline -1", sh("git log --oneline -1")),
-            ("git push origin main", out.replace(tok, "***") or f"To github.com:{REPO}.git\n   main -> main"),
+            ("git diff --stat HEAD~1 HEAD", git("diff", "--stat", "HEAD~1", "HEAD")),
+            ("git log --oneline -1", git("log", "--oneline", "-1")),
+            ("git push origin main", clean or f"To github.com:{REPO}.git\n   {push_sha['sha']}  main -> main"),
         ], type_delay=10, pause=0.5)
     await demo.scene("GitOps push", NARRATION["gitops_push"], s4, hold=1.0)
 
@@ -231,27 +245,33 @@ async def main() -> None:
         async def s5():
             await gh_tab.goto(f"https://github.com/{REPO}/actions", wait_until="domcontentloaded")
             await demo.capture(gh_tab)
-            # open the newest run once it appears
+            # open the newest "ci" run once it appears (the row title links to /actions/runs/<id>)
+            run_url = ""
             for _ in range(20):
                 try:
-                    link = gh_tab.locator("a[href*='/actions/runs/']").first
-                    await link.click(timeout=3000)
-                    break
-                except Exception:
-                    await asyncio.sleep(3)
-                    await gh_tab.reload(wait_until="domcontentloaded")
-            await asyncio.sleep(3)
-            # wait (real time) for the run to finish so the rollout scenes have something to show
-            for _ in range(60):
-                txt = await gh_tab.evaluate("() => document.body.innerText")
-                if "build-push" in txt and ("succeeded" in txt.lower() or "success" in txt.lower()) and "in progress" not in txt.lower():
-                    break
-                await asyncio.sleep(10)
-                try:
-                    await gh_tab.reload(wait_until="domcontentloaded")
+                    link = gh_tab.locator("a[href*='/actions/runs/']", has_text="GitOps demo").first
+                    run_url = await link.get_attribute("href", timeout=3000)
+                    if run_url:
+                        break
                 except Exception:
                     pass
-            await asyncio.sleep(2)
+                await asyncio.sleep(3)
+                await gh_tab.reload(wait_until="domcontentloaded")
+            if run_url:
+                await gh_tab.goto("https://github.com" + run_url if run_url.startswith("/") else run_url, wait_until="domcontentloaded")
+            await asyncio.sleep(4)
+            # wait (real time) for THIS commit's run to finish; poll the API rather than scraping the page
+            for _ in range(60):
+                st = sh(f'curl -s "https://api.github.com/repos/{REPO}/actions/runs?per_page=1&head_sha={push_sha.get("full", "")}"')
+                if '"conclusion": "success"' in st or '"conclusion":"success"' in st:
+                    break
+                await asyncio.sleep(10)
+            try:
+                await gh_tab.reload(wait_until="domcontentloaded")
+                await gh_tab.get_by_text("build-push", exact=False).first.click(timeout=5000)
+            except Exception:
+                pass
+            await asyncio.sleep(3)
         await demo.scene("GitHub Actions", NARRATION["actions"], s5, hold=1.5)
 
         # ---- 6 ArgoCD sync ----
@@ -259,25 +279,36 @@ async def main() -> None:
             pw = wsl("kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d")
             await argo_tab.goto(f"{ARGOCD_UI}/login?return_url={ARGOCD_UI}/applications/argocd/url-health-api?view=tree", wait_until="domcontentloaded")
             try:
-                await argo_tab.fill("input[name=username]", "admin", timeout=15000)
+                await argo_tab.wait_for_selector("input[name=password]", timeout=90000)
+                await argo_tab.fill("input[name=username]", "admin")
                 await argo_tab.fill("input[name=password]", pw)
-                await argo_tab.click("button[type=submit]")
-                await argo_tab.wait_for_selector("text=url-health-api", timeout=30000)
+                await argo_tab.click("button[type=submit]:has-text('SIGN IN')")
+                await argo_tab.wait_for_selector("text=url-health-api", timeout=60000)
             except Exception as exc:
                 print(f"  ! argocd login: {type(exc).__name__}")
 
         async def s6():
+            # The tab was signed in and parked on the app tree before recording; just show it.
+            # A reload is attempted but never allowed to abort the scene (port-forwards hiccup).
             if "/login" in argo_tab.url or "applications" not in argo_tab.url:
-                await argocd_login()
-            await argo_tab.goto(f"{ARGOCD_UI}/applications/argocd/url-health-api?view=tree", wait_until="domcontentloaded")
-            await demo.capture(argo_tab)
-            # wait for ArgoCD to pick up the tag commit (poll up to ~4 min) by watching the deployed image tag in-cluster
+                try:
+                    await argocd_login()
+                except Exception as exc:
+                    print(f"  ! argocd login: {type(exc).__name__}")
+            await demo.capture(argo_tab)  # show the (already loaded) app tree immediately
+            # refresh in the background so a slow port-forward never delays the scene
+            asyncio.ensure_future(argo_tab.reload(wait_until="commit", timeout=20000))
+            # wait for ArgoCD to pick up the tag commit (poll up to ~5 min) by watching the deployed image tag in-cluster
             for _ in range(30):
                 img = wsl("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'")
                 if push_sha["sha"] and push_sha["sha"] in img:
                     break
                 await asyncio.sleep(10)
-            await asyncio.sleep(3)
+            try:
+                await argo_tab.reload(wait_until="commit", timeout=20000)
+            except Exception:
+                pass
+            await asyncio.sleep(4)
         await demo.scene("ArgoCD", NARRATION["argocd"], s6, hold=1.5)
         await demo.capture(page)
 
@@ -287,9 +318,12 @@ async def main() -> None:
         img = wsl("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'")
         hist = wsl("kubectl -n url-health rollout history deployment/url-health-api | tail -4")
         ver = sh(f"curl -s {api}/version")
-        tag = wsl("grep newTag k8s/base/kustomization.yaml")
+        sh("git fetch -q origin main")
+        tag = sh("git show origin/main:k8s/base/kustomization.yaml").split("newTag")[-1].strip(": \n")
+        tag_log = sh("git log origin/main --oneline -1 -- k8s/base/kustomization.yaml")
         await demo.terminal("Rollout: from git push to a live pod", [
-            ("git pull -q && grep newTag k8s/base/kustomization.yaml", tag),
+            ("git fetch origin main && git log origin/main --oneline -1 -- k8s/base/kustomization.yaml", tag_log),
+            ("git show origin/main:k8s/base/kustomization.yaml | grep newTag", f"    newTag: {tag}"),
             ("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'", img),
             ("kubectl -n url-health rollout history deployment/url-health-api", hist),
             ("kubectl -n url-health get pods", wsl("kubectl -n url-health get pods")),
@@ -300,7 +334,7 @@ async def main() -> None:
     # ---- 8 SLOs ----
     if use_cdp:
         async def s8():
-            await slo_tab.goto(f"https://console.cloud.google.com/monitoring/services/url-health-api?project={PROJECT}", wait_until="commit", timeout=120000)
+            await slo_tab.goto(f"https://console.cloud.google.com/monitoring/services/895191614437/url-health-api?project={PROJECT}", wait_until="commit", timeout=120000)
             await demo.capture(slo_tab)
             try:
                 await slo_tab.wait_for_selector("text=/checks", timeout=90000)
