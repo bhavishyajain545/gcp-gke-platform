@@ -47,6 +47,18 @@ def git(*args: str) -> str:
     return (r.stdout + r.stderr).strip()
 
 
+async def type_steps(page, steps, type_delay: int = 10, pause: float = 0.5) -> None:
+    """Type (command, output) pairs into an already-open demo terminal page."""
+    for cmd, output in steps:
+        await page.evaluate("(c) => window.__prompt(c)", "")
+        for ch in cmd:
+            await page.evaluate("(c) => window.__type(c)", ch)
+            await asyncio.sleep(type_delay / 1000)
+        await asyncio.sleep(pause)
+        await page.evaluate("(o) => window.__output(o)", output)
+        await asyncio.sleep(pause)
+
+
 def wsl(cmd: str) -> str:
     """Run a command inside WSL where gcloud/kubectl/terraform/helm are set up (Windows host)."""
     if os.name != "nt":
@@ -154,6 +166,8 @@ async def main() -> None:
     sec_ctx = wsl("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.securityContext}{\"\\n\"}{.spec.template.spec.containers[0].securityContext}'")
     netpol = wsl("kubectl -n url-health get networkpolicy")
     slo_list = wsl("terraform -chdir=terraform state list | grep monitoring_slo")
+    tf_count = str(len(wsl("terraform -chdir=terraform state list").splitlines()))
+    tf_output = wsl("terraform -chdir=terraform output -no-color")
     print(f"pre-computed in {time.time() - t0:.0f}s; api={api}")
 
     page = await demo.start()
@@ -216,27 +230,35 @@ async def main() -> None:
     async def s4():
         tok = os.environ.get("GH_TOKEN", "")
         auth = f"https://x-access-token:{tok}@github.com/{REPO}.git"
-        # 1) up to date with origin (CI's tag-bump commits) - autostash parks any local edits, 2) then make the change.
-        print("  pull:", git("pull", "-q", "--rebase", "--autostash", auth, "main").replace(tok, "***")[:160])
-        main_go = ROOT / "service" / "main.go"
-        src = main_go.read_text(encoding="utf-8")
-        stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
-        marker = "// demo:"
-        new_line = f"{marker} version endpoint touched on {stamp}"
-        src = re.sub(r"// demo:.*\n", "", src)
-        src = src.replace("// Version is set at build time", f"{new_line}\n// Version is set at build time", 1)
-        main_go.write_text(src, encoding="utf-8", newline="\n")  # keep LF: a CRLF rewrite would show as a 100-line diff
-        git("add", "service/main.go")
-        git("-c", "user.name=Bhavishya Jain", "-c", "user.email=jainbhavishya545@gmail.com", "commit", "-q", "-m", "service: touch version endpoint for the GitOps demo")
-        out = git("push", auth, "main")
-        push_sha["sha"] = git("rev-parse", "--short", "HEAD")
-        push_sha["full"] = git("rev-parse", "HEAD")
-        print("  push:", out.replace(tok, "***")[:160])
-        clean = "\n".join(l for l in out.replace(tok, "***").splitlines() if "LF will be" not in l and l.strip())
-        await demo.terminal("GitOps: push a change", [
-            ("git diff --stat HEAD~1 HEAD", git("diff", "--stat", "HEAD~1", "HEAD")),
-            ("git log --oneline -1", git("log", "--oneline", "-1")),
-            ("git push origin main", clean or f"To github.com:{REPO}.git\n   {push_sha['sha']}  main -> main"),
+        await demo.terminal("GitOps: push a change", [])  # terminal on screen first; the git work below takes ~5-10 s
+
+        def do_push() -> dict:
+            # Runs in a thread so the event loop keeps acknowledging screencast frames while git talks to GitHub.
+            # 1) up to date with origin (CI's tag-bump commits) - autostash parks any local edits, 2) then make the change.
+            print("  pull:", git("pull", "-q", "--rebase", "--autostash", auth, "main").replace(tok, "***")[:160])
+            main_go = ROOT / "service" / "main.go"
+            src = main_go.read_text(encoding="utf-8")
+            stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+            marker = "// demo:"
+            new_line = f"{marker} version endpoint touched on {stamp}"
+            src = re.sub(r"// demo:.*\n", "", src)
+            src = src.replace("// Version is set at build time", f"{new_line}\n// Version is set at build time", 1)
+            main_go.write_text(src, encoding="utf-8", newline="\n")  # keep LF: a CRLF rewrite would show as a 100-line diff
+            git("add", "service/main.go")
+            git("-c", "user.name=Bhavishya Jain", "-c", "user.email=jainbhavishya545@gmail.com", "commit", "-q", "-m", "service: touch version endpoint for the GitOps demo")
+            out = git("push", auth, "main")
+            push_sha["sha"] = git("rev-parse", "--short", "HEAD")
+            push_sha["full"] = git("rev-parse", "HEAD")
+            print("  push:", out.replace(tok, "***")[:160])
+            clean = "\n".join(l for l in out.replace(tok, "***").splitlines() if "LF will be" not in l and l.strip())
+            return {"diff": git("diff", "--stat", "HEAD~1", "HEAD"), "log": git("log", "--oneline", "-1"),
+                    "push": clean or f"To github.com:{REPO}.git\n   {push_sha['sha']}  main -> main"}
+
+        r = await asyncio.to_thread(do_push)
+        await type_steps(page, [
+            ("git diff --stat HEAD~1 HEAD", r["diff"]),
+            ("git log --oneline -1", r["log"]),
+            ("git push origin main", r["push"]),
         ], type_delay=10, pause=0.5)
     await demo.scene("GitOps push", NARRATION["gitops_push"], s4, hold=1.0)
 
@@ -274,6 +296,22 @@ async def main() -> None:
             await asyncio.sleep(3)
         await demo.scene("GitHub Actions", NARRATION["actions"], s5, hold=1.5)
 
+    # Rollout-proof values for scene 7, collected at the end of the ArgoCD scene (CDP path) or at the
+    # start of scene 7 (fallback). Never inside scene 7 before its terminal exists: that showed the
+    # previous terminal for 10-20 s while kubectl/git ran.
+    roll: dict = {}
+
+    def collect_rollout() -> None:
+        wsl("kubectl -n url-health rollout status deployment/url-health-api --timeout=4m >/dev/null 2>&1")
+        roll["img"] = wsl("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'")
+        roll["hist"] = wsl("kubectl -n url-health rollout history deployment/url-health-api | tail -4")
+        roll["pods"] = wsl("kubectl -n url-health get pods")
+        roll["ver"] = sh(f"curl -s {api}/version")
+        sh("git fetch -q origin main")
+        roll["tag"] = sh("git show origin/main:k8s/base/kustomization.yaml").split("newTag")[-1].strip(": \n")
+        roll["tag_log"] = sh("git log origin/main --oneline -1 -- k8s/base/kustomization.yaml")
+
+    if use_cdp:
         # ---- 6 ArgoCD sync ----
         async def argocd_login():
             pw = wsl("kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d")
@@ -296,50 +334,48 @@ async def main() -> None:
                 except Exception as exc:
                     print(f"  ! argocd login: {type(exc).__name__}")
             await demo.capture(argo_tab)  # show the (already loaded) app tree immediately
-            # refresh in the background so a slow port-forward never delays the scene
-            asyncio.ensure_future(argo_tab.reload(wait_until="commit", timeout=20000))
-            # wait for ArgoCD to pick up the tag commit (poll up to ~5 min) by watching the deployed image tag in-cluster
+            # No reload: the ArgoCD UI streams updates over a websocket, and a reload through the
+            # port-forward re-downloads the SPA and leaves the frame white for ~10 s (take 10).
+            # Wait for ArgoCD to pick up the tag commit (poll up to ~5 min) by watching the deployed image tag in-cluster.
             for _ in range(30):
                 img = wsl("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'")
                 if push_sha["sha"] and push_sha["sha"] in img:
                     break
                 await asyncio.sleep(10)
-            try:
-                await argo_tab.reload(wait_until="commit", timeout=20000)
-            except Exception:
-                pass
-            await asyncio.sleep(4)
+            # Gather the rollout-proof values now, while the ArgoCD tree is on screen, so scene 7's
+            # terminal appears the moment its narration starts (these commands take 10-20 s).
+            await asyncio.to_thread(collect_rollout)
+            await asyncio.sleep(2)
         await demo.scene("ArgoCD", NARRATION["argocd"], s6, hold=1.5)
         await demo.capture(page)
 
     # ---- 7 rollout proof ----
     async def s7():
-        wsl("kubectl -n url-health rollout status deployment/url-health-api --timeout=4m >/dev/null 2>&1")
-        img = wsl("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'")
-        hist = wsl("kubectl -n url-health rollout history deployment/url-health-api | tail -4")
-        ver = sh(f"curl -s {api}/version")
-        sh("git fetch -q origin main")
-        tag = sh("git show origin/main:k8s/base/kustomization.yaml").split("newTag")[-1].strip(": \n")
-        tag_log = sh("git log origin/main --oneline -1 -- k8s/base/kustomization.yaml")
+        if not roll:  # non-CDP path (no ArgoCD scene) still needs the values
+            await asyncio.to_thread(collect_rollout)
         await demo.terminal("Rollout: from git push to a live pod", [
-            ("git fetch origin main && git log origin/main --oneline -1 -- k8s/base/kustomization.yaml", tag_log),
-            ("git show origin/main:k8s/base/kustomization.yaml | grep newTag", f"    newTag: {tag}"),
-            ("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'", img),
-            ("kubectl -n url-health rollout history deployment/url-health-api", hist),
-            ("kubectl -n url-health get pods", wsl("kubectl -n url-health get pods")),
-            (f"curl -s {api}/version", ver),
+            ("git fetch origin main && git log origin/main --oneline -1 -- k8s/base/kustomization.yaml", roll["tag_log"]),
+            ("git show origin/main:k8s/base/kustomization.yaml | grep newTag", f"    newTag: {roll['tag']}"),
+            ("kubectl -n url-health get deploy url-health-api -o jsonpath='{.spec.template.spec.containers[0].image}'", roll["img"]),
+            ("kubectl -n url-health rollout history deployment/url-health-api", roll["hist"]),
+            ("kubectl -n url-health get pods", roll["pods"]),
+            (f"curl -s {api}/version", roll["ver"]),
         ], type_delay=6, pause=0.5)
     await demo.scene("Rollout", NARRATION["rollout"], s7, hold=1.0)
 
     # ---- 8 SLOs ----
     if use_cdp:
         async def s8():
-            await slo_tab.goto(f"https://console.cloud.google.com/monitoring/services/895191614437/url-health-api?project={PROJECT}", wait_until="commit", timeout=120000)
+            # The tab was pre-loaded at start-up: show it immediately, reload only if the SLO table is missing.
             await demo.capture(slo_tab)
             try:
-                await slo_tab.wait_for_selector("text=/checks", timeout=90000)
+                await slo_tab.wait_for_selector("text=/checks", timeout=5000)
             except Exception:
-                pass
+                await slo_tab.goto(f"https://console.cloud.google.com/monitoring/services/895191614437/url-health-api?project={PROJECT}", wait_until="commit", timeout=120000)
+                try:
+                    await slo_tab.wait_for_selector("text=/checks", timeout=90000)
+                except Exception:
+                    pass
             await asyncio.sleep(4)
         await demo.scene("SLOs", NARRATION["slo"], s8, hold=1.5)
         await demo.capture(page)
@@ -361,8 +397,8 @@ async def main() -> None:
     # ---- 10 wrap ----
     async def s10():
         await demo.terminal("Infrastructure as code + cleanup", [
-            ("terraform -chdir=terraform state list | wc -l", str(len(wsl("terraform -chdir=terraform state list").splitlines()))),
-            ("terraform -chdir=terraform output", wsl("terraform -chdir=terraform output -no-color")),
+            ("terraform -chdir=terraform state list | wc -l", tf_count),
+            ("terraform -chdir=terraform output", tf_output),
             ("# when done: terraform -chdir=terraform destroy", "Autopilot bills per pod; destroy removes the cluster, LB, NAT, registry and SLOs."),
         ], type_delay=8, pause=0.5)
     await demo.scene("Wrap-up", NARRATION["wrap"], s10, hold=1.5)

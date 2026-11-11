@@ -118,8 +118,14 @@ class Demo:
     async def _start_screencast(self, cdp) -> None:
         w, h = self.size
 
+        t0_wall = time.time() - (time.monotonic() - self._t0)  # wall-clock instant of the timeline's t=0
+
         def on_frame(params, _cdp=cdp):
-            self._frames.append((time.monotonic() - self._t0, params["data"]))
+            # Use Chrome's capture timestamp, not the receive time: a blocking subprocess in a scene
+            # (git push, kubectl) delays event delivery and would otherwise stamp the frame seconds late.
+            ts = params.get("metadata", {}).get("timestamp")
+            rel = (ts - t0_wall) if ts else (time.monotonic() - self._t0)
+            self._frames.append((max(rel, 0.0), params["data"]))
             asyncio.ensure_future(_cdp.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]}))
 
         cdp.on("Page.screencastFrame", on_frame)
