@@ -237,6 +237,7 @@
 
 <section id="deploy"><div class="wrap">
   <h2>Deploy it yourself</h2>
+  <p class="sub">Full from-zero runbook (CI secret, SLO second apply, teardown that removes the load balancer): <a href="https://github.com/bhavishyajain545/gcp-gke-platform/blob/main/REBUILD.md">REBUILD.md</a>.</p>
   <p class="sub">About 15 minutes; the cluster takes most of it.</p>
   <ol class="steps">
     <li><b>Configure</b><code>cp terraform/terraform.tfvars.example terraform/terraform.tfvars</code>: project id, your public IP as <code>authorized_cidr</code>, alert email, GitHub repo.</li>

@@ -7,6 +7,7 @@ A small production-style platform on **GKE Autopilot**: a Go microservice (`url-
 - Demo video: [`demo/demo.mp4`](demo/demo.mp4) · captions [`demo/captions.srt`](demo/captions.srt) · transcript [`demo/transcript.md`](demo/transcript.md)
 - Docs site: [`docs/index.html`](docs/index.html)
 - Project: `bj-gke-platform` · region `us-central1`
+- **Rebuild from scratch, step by step (incl. CI secret, SLO second apply, teardown): [`REBUILD.md`](REBUILD.md)**
 
 ## The service
 
