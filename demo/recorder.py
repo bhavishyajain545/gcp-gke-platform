@@ -249,7 +249,7 @@ class Demo:
             "-filter_complex", ";".join(filters),
             "-map", "0:v", "-map", "[aout]",
             "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30",
-            "-c:a", "aac", "-b:a", "160k", "-shortest", str(out),
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-shortest", str(out),  # 48 kHz stereo: the TTS wavs are 24 kHz mono, which some players mishandle
         ]
         subprocess.run(cmd, check=True, capture_output=True)
         self._write_captions(name)
