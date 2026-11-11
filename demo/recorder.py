@@ -271,6 +271,7 @@ class Demo:
         w, h = self.size
         # Anchor the timeline at t=0 so narration offsets stay aligned even if the
         # first screencast frame arrives late (blank pages emit no frames).
+        self._frames.sort(key=lambda f: f[0])  # Chrome timestamps: never let a late delivery produce a negative duration
         if self._frames and self._frames[0][0] > 0.05:
             self._frames.insert(0, (0.0, self._frames[0][1]))
         end = self._cut_dead_air(end)
